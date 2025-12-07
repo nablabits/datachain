@@ -1502,66 +1502,49 @@ def test_column_types(column_type, signal_type):
 def test_to_partial():
     schema = SignalSchema({"name": str, "age": float, "f": File})
     partial = schema.to_partial("name", "f.path")
-    assert partial.serialize() == {
-        "_custom_types": {
-            "FilePartial1@v1": {
-                "bases": [
-                    ("FilePartial1", "datachain.lib.signal_schema", "FilePartial1@v1"),
-                    ("DataModel", "datachain.lib.data_model", "DataModel@v1"),
-                    ("BaseModel", "pydantic.main", None),
-                    ("object", "builtins", None),
-                ],
-                "fields": {
-                    "path": "str",
-                },
-                "hidden_fields": [],
-                "name": "FilePartial1@v1",
-                "schema_version": 2,
-            },
-        },
-        "name": "str",
-        "f": "FilePartial1@v1",
-    }
+    assert set(partial.values) == {"name", "f"}
+    assert partial.values["name"] is str
+
+    file_partial = partial.values["f"]
+    assert issubclass(file_partial, DataModel)
+    assert file_partial.__name__.startswith("FilePartial")
+    assert set(file_partial.model_fields) == {"path"}
+    assert file_partial.model_fields["path"].annotation is str
+
+    serialized = partial.serialize()
+    assert serialized["name"] == "str"
+    assert serialized["f"] == ModelStore.get_name(file_partial)
+    assert ModelStore.get_name(file_partial) in serialized["_custom_types"]
 
 
 def test_to_partial_duplicate():
     schema = SignalSchema({"name": str, "age": float, "f1": File, "f2": File})
     partial = schema.to_partial("age", "f1.path", "f2.source")
-    assert partial.serialize() == {
-        "_custom_types": {
-            "FilePartial1@v1": {
-                "bases": [
-                    ("FilePartial1", "datachain.lib.signal_schema", "FilePartial1@v1"),
-                    ("DataModel", "datachain.lib.data_model", "DataModel@v1"),
-                    ("BaseModel", "pydantic.main", None),
-                    ("object", "builtins", None),
-                ],
-                "fields": {
-                    "path": "str",
-                },
-                "hidden_fields": [],
-                "name": "FilePartial1@v1",
-                "schema_version": 2,
-            },
-            "FilePartial2@v1": {
-                "bases": [
-                    ("FilePartial2", "datachain.lib.signal_schema", "FilePartial2@v1"),
-                    ("DataModel", "datachain.lib.data_model", "DataModel@v1"),
-                    ("BaseModel", "pydantic.main", None),
-                    ("object", "builtins", None),
-                ],
-                "fields": {
-                    "source": "str",
-                },
-                "hidden_fields": [],
-                "name": "FilePartial2@v1",
-                "schema_version": 2,
-            },
-        },
-        "age": "float",
-        "f1": "FilePartial1@v1",
-        "f2": "FilePartial2@v1",
-    }
+    assert set(partial.values) == {"age", "f1", "f2"}
+    assert partial.values["age"] is float
+
+    f1_partial = partial.values["f1"]
+    f2_partial = partial.values["f2"]
+
+    assert issubclass(f1_partial, DataModel)
+    assert issubclass(f2_partial, DataModel)
+    assert f1_partial is not f2_partial
+
+    assert f1_partial.__name__.startswith("FilePartial")
+    assert f2_partial.__name__.startswith("FilePartial")
+
+    assert set(f1_partial.model_fields) == {"path"}
+    assert f1_partial.model_fields["path"].annotation is str
+
+    assert set(f2_partial.model_fields) == {"source"}
+    assert f2_partial.model_fields["source"].annotation is str
+
+    serialized = partial.serialize()
+    assert serialized["age"] == "float"
+    assert serialized["f1"] == ModelStore.get_name(f1_partial)
+    assert serialized["f2"] == ModelStore.get_name(f2_partial)
+    assert ModelStore.get_name(f1_partial) in serialized["_custom_types"]
+    assert ModelStore.get_name(f2_partial) in serialized["_custom_types"]
 
 
 def test_to_partial_nested():
@@ -1571,59 +1554,32 @@ def test_to_partial_nested():
 
     schema = SignalSchema({"name": str, "age": float, "f": File, "custom": Custom})
     partial = schema.to_partial("name", "f.path", "custom.file.source")
-    assert partial.serialize() == {
-        "_custom_types": {
-            "FilePartial1@v1": {
-                "bases": [
-                    ("FilePartial1", "datachain.lib.signal_schema", "FilePartial1@v1"),
-                    ("DataModel", "datachain.lib.data_model", "DataModel@v1"),
-                    ("BaseModel", "pydantic.main", None),
-                    ("object", "builtins", None),
-                ],
-                "fields": {
-                    "path": "str",
-                },
-                "hidden_fields": [],
-                "name": "FilePartial1@v1",
-                "schema_version": 2,
-            },
-            "FilePartial2@v1": {
-                "bases": [
-                    ("FilePartial2", "datachain.lib.signal_schema", "FilePartial2@v1"),
-                    ("DataModel", "datachain.lib.data_model", "DataModel@v1"),
-                    ("BaseModel", "pydantic.main", None),
-                    ("object", "builtins", None),
-                ],
-                "fields": {
-                    "source": "str",
-                },
-                "hidden_fields": [],
-                "name": "FilePartial2@v1",
-                "schema_version": 2,
-            },
-            "CustomPartial1@v1": {
-                "bases": [
-                    (
-                        "CustomPartial1",
-                        "datachain.lib.signal_schema",
-                        "CustomPartial1@v1",
-                    ),
-                    ("DataModel", "datachain.lib.data_model", "DataModel@v1"),
-                    ("BaseModel", "pydantic.main", None),
-                    ("object", "builtins", None),
-                ],
-                "fields": {
-                    "file": "FilePartial2@v1",
-                },
-                "hidden_fields": [],
-                "name": "CustomPartial1@v1",
-                "schema_version": 2,
-            },
-        },
-        "name": "str",
-        "f": "FilePartial1@v1",
-        "custom": "CustomPartial1@v1",
-    }
+    assert set(partial.values) == {"name", "f", "custom"}
+    assert partial.values["name"] is str
+
+    f_partial = partial.values["f"]
+    assert issubclass(f_partial, DataModel)
+    assert set(f_partial.model_fields) == {"path"}
+    assert f_partial.model_fields["path"].annotation is str
+    assert f_partial.__name__.startswith("FilePartial")
+
+    custom_partial = partial.values["custom"]
+    assert issubclass(custom_partial, DataModel)
+    assert set(custom_partial.model_fields) == {"file"}
+    assert custom_partial.__name__.startswith("CustomPartial")
+
+    nested_file_partial = custom_partial.model_fields["file"].annotation
+    assert issubclass(nested_file_partial, DataModel)
+    assert nested_file_partial is not f_partial
+    assert set(nested_file_partial.model_fields) == {"source"}
+    assert nested_file_partial.model_fields["source"].annotation is str
+    assert nested_file_partial.__name__.startswith("FilePartial")
+
+    serialized = partial.serialize()
+    assert serialized["name"] == "str"
+    assert serialized["f"] == ModelStore.get_name(f_partial)
+    assert serialized["custom"] == ModelStore.get_name(custom_partial)
+    assert ModelStore.get_name(nested_file_partial) in serialized["_custom_types"]
 
 
 def test_get_file_signal():
@@ -1638,10 +1594,6 @@ def test_to_partial_complex_signal_entire_file():
 
     # Should return the entire File complex signal
     assert partial.values == {"file": File}
-    serialized = partial.serialize()
-    assert "file" in serialized
-    assert serialized["file"] == "File@v1"
-    assert "File@v1" in serialized["_custom_types"]
 
 
 def test_to_partial_complex_nested_signal():
@@ -1652,7 +1604,17 @@ def test_to_partial_complex_nested_signal():
     schema = SignalSchema({"my_col": Custom, "name": str})
     partial = schema.to_partial("my_col.src")
 
-    assert partial.values == {"my_col.src": File}
+    assert set(partial.values) == {"my_col"}
+
+    custom_partial = partial.values["my_col"]
+    assert issubclass(custom_partial, DataModel)
+    assert set(custom_partial.model_fields) == {"src"}
+    assert custom_partial.model_fields["src"].annotation is File
+    assert custom_partial.__name__.startswith("CustomPartial")
+
+    serialized = partial.serialize()
+    assert serialized["my_col"] == ModelStore.get_name(custom_partial)
+    assert "_custom_types" in serialized
 
 
 def test_to_partial_complex_deeply_nested_signal():
@@ -1676,9 +1638,20 @@ def test_to_partial_complex_deeply_nested_signal():
     # Test deeply nested complex signal
     partial = schema.to_partial("deep.level2.level1.image")
 
-    # Should return the entire ImageFile complex signal with simplified name
-    assert "deep.level2.level1.image" in partial.values
-    assert partial.values["deep.level2.level1.image"] == ImageFile
+    deep_partial = partial.values["deep"]
+    level2_partial = deep_partial.model_fields["level2"].annotation
+    level1_partial = level2_partial.model_fields["level1"].annotation
+
+    assert issubclass(level1_partial, DataModel)
+    assert set(level1_partial.model_fields) == {"image"}
+    assert level1_partial.model_fields["image"].annotation is ImageFile
+    assert deep_partial.__name__.startswith("Level3Partial")
+    assert level2_partial.__name__.startswith("Level2Partial")
+    assert level1_partial.__name__.startswith("Level1Partial")
+
+    serialized = partial.serialize()
+    assert serialized["deep"] == ModelStore.get_name(deep_partial)
+    assert ModelStore.get_name(level1_partial) in serialized["_custom_types"]
 
 
 def test_to_partial_complex_nested_multiple_complex_signals():
@@ -1695,11 +1668,16 @@ def test_to_partial_complex_nested_multiple_complex_signals():
     # Request multiple nested complex signals
     partial = schema.to_partial("container.file1", "container.file2")
 
-    # Should return both complex signals at root level
-    assert "container.file1" in partial.values
-    assert "container.file2" in partial.values
-    assert partial.values["container.file1"] == File
-    assert partial.values["container.file2"] == TextFile
+    assert set(partial.values) == {"container"}
+
+    container_partial = partial.values["container"]
+    assert issubclass(container_partial, DataModel)
+    assert container_partial.model_fields["file1"].annotation is File
+    assert container_partial.model_fields["file2"].annotation is TextFile
+    assert container_partial.__name__.startswith("ContainerPartial")
+
+    serialized = partial.serialize()
+    assert serialized["container"] == ModelStore.get_name(container_partial)
 
 
 def test_to_partial_complex_nested_mixed_complex_and_simple():
@@ -1715,13 +1693,18 @@ def test_to_partial_complex_nested_mixed_complex_and_simple():
     # Request mix of nested complex signal and simple field
     partial = schema.to_partial("container.file", "container.name", "simple")
 
-    # Should have complex signal at root, partial for simple field, and simple type
-    assert "container.file" in partial.values
-    assert "container" in partial.values
-    assert "simple" in partial.values
-
-    assert partial.values["container.file"] == File
+    assert set(partial.values) == {"container", "simple"}
     assert partial.values["simple"] is str
+
+    container_partial = partial.values["container"]
+    assert issubclass(container_partial, DataModel)
+    assert container_partial.model_fields["file"].annotation is File
+    assert container_partial.model_fields["name"].annotation is str
+    assert container_partial.__name__.startswith("ContainerPartial")
+
+    serialized = partial.serialize()
+    assert serialized["container"] == ModelStore.get_name(container_partial)
+    assert serialized["simple"] == "str"
 
 
 def test_to_partial_complex_nested_same_type_different_paths():
@@ -1740,12 +1723,22 @@ def test_to_partial_complex_nested_same_type_different_paths():
     # Request same complex type from different nested paths
     partial = schema.to_partial("cont1.file", "cont2.file")
 
-    # Should return single File type at root level (deduplicated)
-    assert "cont1.file" in partial.values
-    assert "cont2.file" in partial.values
-    assert partial.values["cont1.file"] == File
-    assert partial.values["cont2.file"] == File
-    assert len(partial.values) == 2
+    assert set(partial.values) == {"cont1", "cont2"}
+
+    cont1_partial = partial.values["cont1"]
+    cont2_partial = partial.values["cont2"]
+    assert issubclass(cont1_partial, DataModel)
+    assert issubclass(cont2_partial, DataModel)
+    assert cont1_partial is not cont2_partial
+
+    assert cont1_partial.model_fields["file"].annotation is File
+    assert cont2_partial.model_fields["file"].annotation is File
+    assert cont1_partial.__name__.startswith("Container1Partial")
+    assert cont2_partial.__name__.startswith("Container2Partial")
+
+    serialized = partial.serialize()
+    assert serialized["cont1"] == ModelStore.get_name(cont1_partial)
+    assert serialized["cont2"] == ModelStore.get_name(cont2_partial)
 
 
 def test_to_partial_complex_signal_file_single_field():
@@ -1753,15 +1746,16 @@ def test_to_partial_complex_signal_file_single_field():
     schema = SignalSchema({"name": str, "file": File})
     partial = schema.to_partial("file.path")
 
-    serialized = partial.serialize()
-    assert "name" not in serialized  # Only file should be included
-    assert "file" in serialized
-    assert serialized["file"] == "FilePartial1@v1"
+    assert set(partial.values) == {"file"}
 
-    # Check the partial type contains only path field
-    custom_types = serialized["_custom_types"]
-    file_partial = custom_types["FilePartial1@v1"]
-    assert file_partial["fields"] == {"path": "str"}
+    file_partial = partial.values["file"]
+    assert issubclass(file_partial, DataModel)
+    assert set(file_partial.model_fields) == {"path"}
+    assert file_partial.model_fields["path"].annotation is str
+    assert file_partial.__name__.startswith("FilePartial")
+
+    serialized = partial.serialize()
+    assert serialized["file"] == ModelStore.get_name(file_partial)
 
 
 def test_to_partial_complex_signal_mixed_entire_and_fields():
@@ -1769,29 +1763,22 @@ def test_to_partial_complex_signal_mixed_entire_and_fields():
     schema = SignalSchema({"file1": File, "file2": File, "name": str})
     partial = schema.to_partial("file1", "file2.path", "name")
 
+    assert set(partial.values) == {"file1", "file2", "name"}
+
+    assert partial.values["file1"] is File
+    assert partial.values["name"] is str
+
+    file2_partial = partial.values["file2"]
+    assert issubclass(file2_partial, DataModel)
+    assert set(file2_partial.model_fields) == {"path"}
+    assert file2_partial.model_fields["path"].annotation is str
+    assert file2_partial.__name__.startswith("FilePartial")
+
     serialized = partial.serialize()
-    assert "file1" in serialized
-    assert "file2" in serialized
-    assert "name" in serialized
-
-    # file1 should be the entire File type
     assert serialized["file1"] == "File@v1"
-    # file2 should be a partial with only path field
-    assert serialized["file2"].startswith("FilePartial") and serialized[
-        "file2"
-    ].endswith("@v1")
-    # name should be simple type
+    assert serialized["file2"] == ModelStore.get_name(file2_partial)
     assert serialized["name"] == "str"
-
-    # Check custom types
-    custom_types = serialized["_custom_types"]
-    assert "File@v1" in custom_types
-    file2_partial_key = serialized["file2"]
-    assert file2_partial_key in custom_types
-
-    # Check partial has only path field
-    file2_partial = custom_types[file2_partial_key]
-    assert file2_partial["fields"] == {"path": "str"}
+    assert ModelStore.get_name(file2_partial) in serialized["_custom_types"]
 
 
 def test_to_partial_complex_signal_multiple_entire_files():
@@ -1799,24 +1786,13 @@ def test_to_partial_complex_signal_multiple_entire_files():
     schema = SignalSchema({"file1": File, "file2": File, "name": str})
     partial = schema.to_partial("file1", "file2")
 
-    serialized = partial.serialize()
-    assert "file1" in serialized
-    assert "file2" in serialized
-    assert "name" not in serialized  # name was not requested
-
-    # Both should be the entire File type
-    assert serialized["file1"] == "File@v1"
-    assert serialized["file2"] == "File@v1"
-
-    # Should have the full File custom type
-    custom_types = serialized["_custom_types"]
-    assert "File@v1" in custom_types
-    assert len(custom_types) == 1  # Only one File type needed
+    assert set(partial.values) == {"file1", "file2"}
+    assert partial.values["file1"] is File
+    assert partial.values["file2"] is File
 
 
 def test_to_partial_complex_signal_nested_entire():
     """Test to_partial with nested complex signal - entire parent."""
-    from datachain.lib.data_model import DataModel
 
     class Container(DataModel):
         name: str
@@ -1825,21 +1801,13 @@ def test_to_partial_complex_signal_nested_entire():
     schema = SignalSchema({"container": Container, "simple": str})
     partial = schema.to_partial("container")
 
-    serialized = partial.serialize()
-    assert "container" in serialized
-    assert "simple" not in serialized
+    assert set(partial.values) == {"container"}
 
-    # Should be the entire Container type
-    assert serialized["container"].startswith("Container@")
-
-    # Should have the full Container custom type with nested File
-    custom_types = serialized["_custom_types"]
-    container_key = serialized["container"]
-    assert container_key in custom_types
-    assert "File@v1" in custom_types
-
-    container_type = custom_types[container_key]
-    assert container_type["fields"] == {"name": "str", "file": "File@v1"}
+    container_type = partial.values["container"]
+    assert issubclass(container_type, DataModel)
+    assert set(container_type.model_fields) == {"name", "file"}
+    assert container_type.model_fields["name"].annotation is str
+    assert container_type.model_fields["file"].annotation is File
 
 
 def test_to_partial_complex_signal_empty_request():
@@ -1849,8 +1817,6 @@ def test_to_partial_complex_signal_empty_request():
 
     # Should return empty schema
     assert partial.values == {}
-    serialized = partial.serialize()
-    assert "_custom_types" not in serialized or not serialized.get("_custom_types")
 
 
 def test_to_partial_complex_signal_error_invalid_signal():

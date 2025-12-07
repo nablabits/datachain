@@ -1218,6 +1218,28 @@ class SignalSchema:
         signal_partials: dict[str, str] = {}
         partial_versions: dict[str, int] = {}
 
+        def _ensure_partial_custom_type(type_name: str) -> None:
+            nonlocal data_model_bases
+
+            if (
+                type_name in custom_types
+                or type_name in schema_custom_types
+                or type_name in NAMES_TO_TYPES
+                or "Partial" not in type_name
+            ):
+                return
+
+            if data_model_bases is None:
+                data_model_bases = SignalSchema._get_bases(DataModel)
+
+            parsed_name, _ = ModelStore.parse_name_version(type_name)
+            schema_custom_types[type_name] = CustomType(
+                schema_version=2,
+                name=parsed_name,
+                fields={},
+                bases=[(parsed_name, "__main__", type_name), *data_model_bases],
+            )
+
         def _type_name_to_partial(signal_name: str, type_name: str) -> str:
             # Check if we need to create a partial for this type
             # Only create partials for custom types that are in the custom_types dict
@@ -1273,43 +1295,21 @@ class SignalSchema:
                         f"Field {signal} not found in custom type {parent_type}"
                     )
 
-                # Check if this is the last part and if the column type is a complex
-                is_last_part = i == len(column_parts) - 1
-                is_complex_signal = signal_type in custom_types
+                is_leaf = i == len(column_parts) - 1
 
-                if is_last_part and is_complex_signal:
-                    schema[column] = signal_type
-                    # Also need to remove the partial schema entry we created for the
-                    # parent since we're promoting the nested complex column to root
-                    parent_signal = column_parts[0]
-                    schema.pop(parent_signal, None)
-                    # Don't create partial types for this case
-                    break
-
-                # Create partial type for this field
-                partial_type = _type_name_to_partial(
-                    ".".join(column_parts[: i + 1]),
-                    signal_type,
-                )
-
-                if parent_type_partial in schema_custom_types:
-                    schema_custom_types[parent_type_partial].fields[signal] = (
-                        partial_type
-                    )
+                if is_leaf and signal_type in custom_types:
+                    # Selecting an entire nested complex field: keep the original type
+                    partial_type = signal_type
                 else:
-                    if data_model_bases is None:
-                        data_model_bases = SignalSchema._get_bases(DataModel)
-
-                    partial_type_name, _ = ModelStore.parse_name_version(partial_type)
-                    schema_custom_types[parent_type_partial] = CustomType(
-                        schema_version=2,
-                        name=partial_type_name,
-                        fields={signal: partial_type},
-                        bases=[
-                            (partial_type_name, "__main__", partial_type),
-                            *data_model_bases,
-                        ],
+                    partial_type = _type_name_to_partial(
+                        ".".join(column_parts[: i + 1]),
+                        signal_type,
                     )
+
+                _ensure_partial_custom_type(partial_type)
+                _ensure_partial_custom_type(parent_type_partial)
+
+                schema_custom_types[parent_type_partial].fields[signal] = partial_type
 
                 parent_type, parent_type_partial = signal_type, partial_type
 
