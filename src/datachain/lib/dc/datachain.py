@@ -1,5 +1,6 @@
 import copy
 import hashlib
+import logging
 import os
 import os.path
 import sys
@@ -26,6 +27,7 @@ from datachain import json, semver
 from datachain.dataset import DatasetRecord
 from datachain.delta import delta_disabled
 from datachain.error import (
+    JobAncestryDepthExceededError,
     ProjectCreateNotAllowedError,
     ProjectNotFoundError,
 )
@@ -73,6 +75,8 @@ from .utils import (
     is_studio,
     resolve_columns,
 )
+
+logger = logging.getLogger("datachain")
 
 C = Column
 
@@ -643,6 +647,9 @@ class DataChain:
 
         # Checkpoint handling
         _hash, result = self._resolve_checkpoint(name, project, job, kwargs)
+        if bool(result):
+            # Checkpoint was found and reused
+            print(f"Checkpoint found for dataset '{name}', skipping creation")
 
         # Schema preparation
         schema = self.signals_schema.clone_without_sys_signals().serialize()
@@ -662,7 +669,6 @@ class DataChain:
                     attrs=attrs,
                     feature_schema=schema,
                     update_version=update_version,
-                    job_id=job.id,
                     **kwargs,
                 )
             )
@@ -712,10 +718,60 @@ class DataChain:
             and not checkpoints_reset
             and metastore.find_checkpoint(job.parent_job_id, _hash)
         ):
-            # checkpoint found → reuse dataset
-            chain = read_dataset(
-                name, namespace=project.namespace.name, project=project.name, **kwargs
+            # checkpoint found → find which dataset version to reuse
+
+            # Find dataset version that was created by any ancestor job
+            try:
+                dataset_version = metastore.get_dataset_version_for_job_ancestry(
+                    name,
+                    project.namespace.name,
+                    project.name,
+                    job.id,
+                )
+            except JobAncestryDepthExceededError:
+                raise JobAncestryDepthExceededError(
+                    "Job continuation chain is too deep. "
+                    "Please run the job from scratch without continuing from a "
+                    "parent job."
+                ) from None
+
+            if not dataset_version:
+                logger.debug(
+                    "Checkpoint found but no dataset version for '%s' "
+                    "in job ancestry (job_id=%s). Creating new version.",
+                    name,
+                    job.id,
+                )
+                # Dataset version not found (e.g deleted by user) - skip
+                # checkpoint and recreate
+                return _hash, None
+
+            logger.debug(
+                "Reusing dataset version '%s' v%s from job ancestry "
+                "(job_id=%s, dataset_version_id=%s)",
+                name,
+                dataset_version.version,
+                job.id,
+                dataset_version.id,
             )
+
+            # Read the specific version from ancestry
+            chain = read_dataset(
+                name,
+                namespace=project.namespace.name,
+                project=project.name,
+                version=dataset_version.version,
+                **kwargs,
+            )
+
+            # Link current job to this dataset version (not creator).
+            # This also updates dataset_version.job_id.
+            metastore.link_dataset_version_to_job(
+                dataset_version.id,
+                job.id,
+                is_creator=False,
+            )
+
             return _hash, chain
 
         return _hash, None
