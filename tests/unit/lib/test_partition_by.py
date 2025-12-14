@@ -337,9 +337,13 @@ def test_1434(test_session):
         f.write('[{"x_y": 0}]')
         temp_path = f.name
 
-
     chain = dc.read_json(temp_path)
     chain.mutate(out=dc.C('json.x_y'))
+    chain.show()
+
+    # However this will fail
+    chain = dc.read_json("/home/davif/dev/git/datachain/tests/unit/lib/sample.json")
+    chain = chain.mutate(out=dc.C('json.xY'))
     chain.show()
 
 
