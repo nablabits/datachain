@@ -312,6 +312,37 @@ def test_nested_column_partition_by(test_session):
     assert name_to_total["test2"] == 20
     assert name_to_total["test3"] == 40
 
+def test_1434(test_session):
+    # This seems to be failing as per https://github.com/datachain-ai/datachain/issues/1434
+    import datachain as dc
+    import tempfile
+    
+    # Create a temporary JSON file
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        f.write('[{"xY": 0}]')
+        temp_path = f.name
+
+    chain = dc.read_json(temp_path)
+    chain.mutate(out=dc.C('json.xY'))
+    chain.show()
+
+    # Try with a real json file just in case
+    chain = dc.read_json("/home/davif/dev/git/datachain/tests/unit/lib/sample.json")
+    chain.mutate(out=dc.C('json.xY'))
+    chain.show()
+
+
+    # 2nd scenario
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        f.write('[{"x_y": 0}]')
+        temp_path = f.name
+
+
+    chain = dc.read_json(temp_path)
+    chain.mutate(out=dc.C('json.x_y'))
+    chain.show()
+
+
 
 def test_nested_column_agg_partition_by(test_session):
     class Person(BaseModel):
